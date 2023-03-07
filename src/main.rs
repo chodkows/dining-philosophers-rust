@@ -37,11 +37,11 @@ fn main() {
     let second = Arc::new(Fork::new(Mutex::new(1), 1));
     let third = Arc::new(Fork::new(Mutex::new(2), 2));
     let fourth = Arc::new(Fork::new(Mutex::new(3), 3));
-    let fivth = Arc::new(Fork::new(Mutex::new(4), 4));
+    let fifth = Arc::new(Fork::new(Mutex::new(4), 4));
     let philosophers: Vec<Philosopher> = vec![
         Philosopher::new(
             "Socrates".to_string(),
-            Arc::clone(&fivth),
+            Arc::clone(&fifth),
             Arc::clone(&first),
         ),
         Philosopher::new("Plato".to_string(), Arc::clone(&first), Arc::clone(&second)),
@@ -58,7 +58,7 @@ fn main() {
         Philosopher::new(
             "Pythagoras".to_string(),
             Arc::clone(&fourth),
-            Arc::clone(&fivth),
+            Arc::clone(&fifth),
         ),
     ];
 
@@ -98,9 +98,9 @@ fn dinning_philosophers(philosopher: &Philosopher, wg: Arc<Barrier>, seated: Arc
     for _ in 0..HUNGER {
         if philosopher.left_fork.number > philosopher.right_fork.number {
             if let Ok(_) = philosopher.right_fork.mutex.lock() {
-                println!("    {} has right fork", philosopher.name);
+                println!("        {} has right fork", philosopher.name);
                 if let Ok(_) = philosopher.left_fork.mutex.lock() {
-                    println!("    {} has left fork", philosopher.name);
+                    println!("        {} has left fork", philosopher.name);
                     println!("    {} has both forks and is eating", philosopher.name);
                     thread::sleep(EAT_TIME);
 
@@ -110,9 +110,9 @@ fn dinning_philosophers(philosopher: &Philosopher, wg: Arc<Barrier>, seated: Arc
             }
         } else {
             if let Ok(_) = philosopher.left_fork.mutex.lock() {
-                println!("    {} has left fork", philosopher.name);
+                println!("        {} has left fork", philosopher.name);
                 if let Ok(_) = philosopher.right_fork.mutex.lock() {
-                    println!("    {} has right fork", philosopher.name);
+                    println!("        {} has right fork", philosopher.name);
                     println!("    {} has both forks and is eating", philosopher.name);
                     thread::sleep(EAT_TIME);
 
@@ -121,6 +121,7 @@ fn dinning_philosophers(philosopher: &Philosopher, wg: Arc<Barrier>, seated: Arc
                 }
             }
         }
+        println!("    {} put down the forks", philosopher.name);
     }
     println!("{} is satisfied", philosopher.name);
     println!("{} left the table", philosopher.name);
