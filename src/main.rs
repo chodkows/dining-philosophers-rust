@@ -40,24 +40,33 @@ impl Philosopher {
             .expect("Unable to send to done_channel");
     }
 
+    fn start_meal(&self, table: &Table) {
+        for _ in 0..EATING_COUNTER {
+            self.eat(table);
+            self.think();
+        }
+    }
+
     fn eat(&self, table: &Table) {
         let _left_fork = table.forks[self.left_fork]
             .lock()
             .ok()
             .expect("Unable to lock left_fork mutex");
+        println!("       {} took left fork", self.name);
         let _right_fork = table.forks[self.right_fork]
             .lock()
             .ok()
             .expect("Unable to lock right_fork mutex");
-        println!("        {} started eating", self.name);
+        println!("       {} took right fork", self.name);
+        println!("   {} started eating", self.name);
         thread::sleep(EAT_TIME);
-        println!("        {} ended eating", self.name);
+        println!("   {} ended eating", self.name);
     }
 
     fn think(&self) {
-        println!("        {} started thinking", self.name);
+        println!("   {} started thinking", self.name);
         thread::sleep(THINK_TIME);
-        println!("        {} ended thinking", self.name);
+        println!("   {} ended thinking", self.name);
 
         self.done();
     }
@@ -73,7 +82,6 @@ fn main() {
     println!("Table is empty");
 
     let (tx, rx) = channel::<bool>();
-    let (tx_seat, rx_seat) = channel();
 
     let philosophers = vec![
         Philosopher::new("Plato", 0, 1, tx.clone()),
@@ -93,28 +101,20 @@ fn main() {
         ],
     });
     let event_number = philosophers.len() * EATING_COUNTER;
+    let barrier = Arc::new(Barrier::new(philosophers.len()));
 
     let handles: Vec<_> = philosophers
         .into_iter()
         .map(|p| {
             let table = table.clone();
-            let tx = tx_seat.clone();
+            let barrier = Arc::clone(&barrier);
             thread::spawn(move || {
-                tx.send(format!("{} is seated", p.name))
-                    .ok()
-                    .expect("Unable to send message to seat channel");
-                for i in 0..EATING_COUNTER {
-                    println!("    {} meal for {}", i + 1, p.name);
-                    p.eat(&table);
-                    p.think();
-                }
+                println!("{} is seated", p.name);
+                barrier.wait();
+                p.start_meal(&table);
             })
         })
         .collect();
-
-    rx_seat.recv().into_iter().for_each(|message| {
-        println!("{}", message);
-    });
 
     for _ in 0..event_number {
         rx.recv().ok().expect("Unable to receive done messages");
