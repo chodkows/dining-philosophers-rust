@@ -1,130 +1,98 @@
-use std::sync::{Arc, Barrier, Mutex};
-use std::{thread, time::Duration};
-
-const HUNGER: i32 = 3;
-const EAT_TIME: Duration = Duration::from_secs(1);
-const THINK_TIME: Duration = Duration::from_secs(3);
+use std::sync::mpsc::{channel, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 struct Philosopher {
     name: String,
-    left_fork: Arc<Fork>,
-    right_fork: Arc<Fork>,
+    left_fork: usize,
+    right_fork: usize,
+    done: Sender<bool>,
 }
 
 impl Philosopher {
-    fn new(name: String, left_fork: Arc<Fork>, right_fork: Arc<Fork>) -> Philosopher {
+    fn new(name: &str, left_fork: usize, right_fork: usize, done: Sender<bool>) -> Philosopher {
         Philosopher {
-            name,
+            name: name.to_string(),
             left_fork,
             right_fork,
+            done,
         }
     }
-}
 
-struct Fork {
-    mutex: Mutex<i32>,
-    number: i32,
-}
-
-impl Fork {
-    fn new(mutex: Mutex<i32>, number: i32) -> Fork {
-        Fork { mutex, number }
+    fn done(&self) {
+        println!("{} is satisfied", self.name);
+        self.done
+            .send(true)
+            .ok()
+            .expect("Unable to send message to channel");
     }
+
+    fn eat(&self, table: &Table) {
+        let _left = table.forks[self.left_fork]
+            .lock()
+            .ok()
+            .expect("Unable to take left fork");
+        println!("        {} has left fork", self.name);
+        let _right = table.forks[self.right_fork]
+            .lock()
+            .ok()
+            .expect("Unable to take right fork");
+        println!("        {} has right fork", self.name);
+        println!("{} is eating", self.name);
+        thread::sleep(Duration::from_secs(1));
+        println!("{} is done eating", self.name);
+    }
+
+    fn think(&self) {
+        println!("{} is thinking", self.name);
+        thread::sleep(Duration::from_secs(3));
+        println!("{} after thinking said: Eureka!", self.name);
+        self.done();
+    }
+}
+
+struct Table {
+    forks: Vec<Mutex<bool>>,
 }
 
 fn main() {
-    let first = Arc::new(Fork::new(Mutex::new(0), 0));
-    let second = Arc::new(Fork::new(Mutex::new(1), 1));
-    let third = Arc::new(Fork::new(Mutex::new(2), 2));
-    let fourth = Arc::new(Fork::new(Mutex::new(3), 3));
-    let fifth = Arc::new(Fork::new(Mutex::new(4), 4));
-    let philosophers: Vec<Philosopher> = vec![
-        Philosopher::new(
-            "Socrates".to_string(),
-            Arc::clone(&fifth),
-            Arc::clone(&first),
-        ),
-        Philosopher::new("Plato".to_string(), Arc::clone(&first), Arc::clone(&second)),
-        Philosopher::new(
-            "Aristotle".to_string(),
-            Arc::clone(&second),
-            Arc::clone(&third),
-        ),
-        Philosopher::new(
-            "Thales".to_string(),
-            Arc::clone(&third),
-            Arc::clone(&fourth),
-        ),
-        Philosopher::new(
-            "Pythagoras".to_string(),
-            Arc::clone(&fourth),
-            Arc::clone(&fifth),
-        ),
+    let (tx, rx) = channel();
+    let table = Arc::new(Table {
+        forks: vec![
+            Mutex::new(true),
+            Mutex::new(true),
+            Mutex::new(true),
+            Mutex::new(true),
+            Mutex::new(true),
+        ],
+    });
+
+    let philosophers = vec![
+        Philosopher::new("Baruch Spinoza", 4, 0, tx.clone()),
+        Philosopher::new("Gilles Deluze", 0, 1, tx.clone()),
+        Philosopher::new("Karl Marks", 1, 2, tx.clone()),
+        Philosopher::new("Friedrich Nietzsche", 2, 3, tx.clone()),
+        Philosopher::new("Michael Foucault", 3, 4, tx.clone()),
     ];
 
-    println!("The dinning philosophers problem");
-    println!("Table is empty");
-
-    dine(philosophers);
-
-    println!("Table is empty");
-}
-
-fn dine(philosophers: Vec<Philosopher>) {
-    let wg = Arc::new(Barrier::new(philosophers.len()));
-    let mut wg_handles = Vec::with_capacity(philosophers.len());
-
-    let seated = Arc::new(Barrier::new(philosophers.len()));
-    //   let mut seated_handles = Vec::with_capacity(philosophers.len());
-
-    for philosopher in philosophers {
-        let w = Arc::clone(&wg);
-        let s = Arc::clone(&seated);
-
-        wg_handles.push(thread::spawn(move || {
-            dinning_philosophers(&philosopher, w, s);
-        }));
-    }
-
-    for handle in wg_handles {
-        handle.join().unwrap();
-    }
-}
-
-fn dinning_philosophers(philosopher: &Philosopher, wg: Arc<Barrier>, seated: Arc<Barrier>) {
-    println!("{} is sited at the table", philosopher.name);
-    seated.wait();
-
-    for _ in 0..HUNGER {
-        if philosopher.left_fork.number > philosopher.right_fork.number {
-            if let Ok(_) = philosopher.right_fork.mutex.lock() {
-                println!("        {} has right fork", philosopher.name);
-                if let Ok(_) = philosopher.left_fork.mutex.lock() {
-                    println!("        {} has left fork", philosopher.name);
-                    println!("    {} has both forks and is eating", philosopher.name);
-                    thread::sleep(EAT_TIME);
-
-                    println!("    {} is thinking", philosopher.name);
-                    thread::sleep(THINK_TIME);
+    let handles: Vec<_> = philosophers
+        .into_iter()
+        .map(|p| {
+            let table = table.clone();
+            thread::spawn(move || {
+                for _ in 0..3 {
+                    p.eat(&table);
+                    p.think();
                 }
-            }
-        } else {
-            if let Ok(_) = philosopher.left_fork.mutex.lock() {
-                println!("        {} has left fork", philosopher.name);
-                if let Ok(_) = philosopher.right_fork.mutex.lock() {
-                    println!("        {} has right fork", philosopher.name);
-                    println!("    {} has both forks and is eating", philosopher.name);
-                    thread::sleep(EAT_TIME);
-
-                    println!("    {} is thinking", philosopher.name);
-                    thread::sleep(THINK_TIME);
-                }
-            }
-        }
-        println!("    {} put down the forks", philosopher.name);
+            })
+        })
+        .collect();
+    for _ in 0..15 {
+        rx.recv().unwrap();
     }
-    println!("{} is satisfied", philosopher.name);
-    println!("{} left the table", philosopher.name);
 
-    wg.wait();
+    for handle in handles {
+        handle.join().ok().expect("Couldn't join threads");
+    }
 }
